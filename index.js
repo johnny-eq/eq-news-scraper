@@ -120,7 +120,7 @@ let articleInfo = await getArticles();
 console.log('Articles found: ' + articleInfo.length);
 articleInfo = await getArticleContent(articleInfo);
 const csvData = [];
-const csvHeaders = ['title', 'thumbnail', 'publish_date', 'content', 'tags'];
+const csvHeaders = ['title', 'thumbnail', 'published_at', 'content', 'tags'];
 csvData.push(csvHeaders);
 articleInfo.forEach((article) => {
     csvData.push([
