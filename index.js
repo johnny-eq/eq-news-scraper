@@ -13,7 +13,7 @@ async function getArticles(){
     const articleClass = '.wp-block-post';
     let pageNum = 1;
     const browser = await puppeteer.launch({
-        slowMo: 250
+        slowMo: 150
     });
     const page = await browser.newPage();
     await page.goto(baseUrl);
@@ -84,9 +84,8 @@ async function getArticles(){
 }
 
 async function getArticleContent(articles) {
-    // wait 5 minutes for timeout due to all pages being queued up for promises to resolve
     const browser = await puppeteer.launch({
-        slowMo: 250,
+        slowMo: 150,
         timeout: 300000
     });
     const page = await browser.newPage();
