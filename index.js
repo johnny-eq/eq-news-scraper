@@ -3,9 +3,19 @@ import * as path from "node:path";
 import { dirname }  from 'path';
 import { fileURLToPath } from 'url';
 import { writeToPath } from '@fast-csv/format';
+import fs from 'fs';
+import { mkdir } from 'fs';
+import { Readable } from 'stream';
+import { finished } from 'stream/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+// Insite API Info
+const target_db = process.env.INSITE_TARGET_DB;
+const api_base_url = `${process.env.INSITE_API_URL}${process.env.CLIENT_NAME}/`;
+const auth_token = process.env.INSITE_AUTH_TOKEN;
+
+// TODO: integrate the file grabbing and link fixing scripts into the initial import
 
 async function getArticles(){
     const baseUrl = 'https://www.ardaghgroup.com/news-centre/';
@@ -13,7 +23,7 @@ async function getArticles(){
     const articleClass = '.wp-block-post';
     let pageNum = 1;
     const browser = await puppeteer.launch({
-        slowMo: 150
+        slowMo: 70
     });
     const page = await browser.newPage();
     await page.goto(baseUrl);
@@ -57,10 +67,14 @@ async function getArticles(){
 
                 });
                 const date = new Date(article.querySelector('time').innerText);
+                let src = article.querySelector('img').getAttribute('src');
+                if (src.indexOf('https://www.ardaghgroup.com') === -1) {
+                    src = 'https://www.ardaghgroup.com' + src;
+                }
                 articleList.push({
-                    'title': article.querySelector('h5').innerText,
+                    'short_title': article.querySelector('h5').innerText,
                     'url': article.querySelector('h5 > a').getAttribute('href'),
-                    'thumbnail': article.querySelector('img').getAttribute('src'),
+                    'thumbnail': src,
                     'publish_date': date.getFullYear() + '-' + ('0' + (date.getMonth() + 1)).slice(-2) + '-' + ('0' + (date.getDate())).slice(-2),
                     'tags': articleTags
                 });
@@ -93,7 +107,6 @@ async function getArticleContent(articles) {
         const article = articles[i];
         const url = article.url;
         await page.goto(url);
-        console.log('Grabbing page ' + url);
         let content = await page.evaluate((selector) => {
             const paragraphs = document.querySelectorAll(selector);
             if (!paragraphs) {
@@ -108,7 +121,14 @@ async function getArticleContent(articles) {
             });
             return articleText;
         }, '.single-news-item p');
-        article.content = content;
+        let title = await page.evaluate((selector) => {
+            const full_title_el = document.querySelector(selector);
+            if (full_title_el) {
+                return full_title_el.innerText;
+            }
+        }, '.single-news-item h1');
+        article.content = content ? content : "" ;
+        article.title = title ? title : article.short_title;
         articles[i] = article;
     };
 
@@ -116,20 +136,70 @@ async function getArticleContent(articles) {
     return articles;
 }
 
+async function storeArticleToInsite(article) {
+    const body = {
+        data: {
+            table_id: target_db,
+            data: {
+                title: article.title,
+                short_title: article.short_title,
+                thumbnail: {
+                    url: article.thumbnail // TODO: investigate why the API is not accepting the image URL
+                },
+                thumbnail_url: article.thumbnail,
+                published_at: article.publish_date,
+                tags: article.tags,
+                tag_list: article.tags.toString(),
+                content: article.content
+            }
+        }
+    }
+    return fetch(
+        `${api_base_url}/tables/${target_db}/records`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${auth_token}`,
+            },
+            body: JSON.stringify(body)
+        }
+    );
+}
+
+async function getImage(url, fileName)  {
+    const res = await fetch(url);
+    if (!fs.existsSync("images")) await mkdir("images");
+    const destination = path.resolve("./images", fileName);
+    const fileStream = fs.createWriteStream(destination, { flags: 'wx' });
+    return await finished(Readable.fromWeb(res.body).pipe(fileStream));
+}
+
 let articleInfo = await getArticles();
 console.log('Articles found: ' + articleInfo.length);
 articleInfo = await getArticleContent(articleInfo);
 const csvData = [];
-const csvHeaders = ['title', 'thumbnail', 'published_at', 'content', 'tags'];
+const csvHeaders = ['title', 'short_title', 'thumbnail', 'published_at', 'content', 'tags'];
 csvData.push(csvHeaders);
+
 articleInfo.forEach((article) => {
     csvData.push([
         article.title,
+        article.short_title,
         article.thumbnail,
         article.publish_date,
         article.content,
         article.tags
     ]);
+
+    // Write records to Insite
+    storeArticleToInsite(article).then((result) => {
+        if (result.ok) {
+            console.log(`Article: "${article.title}" added`);
+        } else {
+            console.error(`Error for Article: "${article.title}"`);
+        }
+    });
 });
 writeToPath(path.resolve(__dirname, 'news_export.csv'), csvData)
     .on('error', err => console.error(err))

@@ -9,8 +9,10 @@
   "author": "",
   "license": "ISC",
   "description": "",
+  "type": "module",
   "dependencies": {
     "fast-csv": "^5.0.5",
+    "jsdom": "^27.1.0",
     "puppeteer": "^24.16.1"
   }
 }
