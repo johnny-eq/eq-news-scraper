@@ -18,7 +18,7 @@ const auth_token = process.env.INSITE_AUTH_TOKEN;
 // TODO: integrate the file grabbing and link fixing scripts into the initial import
 
 async function getArticles(){
-    const baseUrl = 'https://www.ardaghgroup.com/news-centre/';
+    const baseUrl = `${process.env.CLIENT_BASE_URL}/ news-centre/`;
     const pageQuery = 'query-34-page';
     const articleClass = '.wp-block-post';
     let pageNum = 1;
